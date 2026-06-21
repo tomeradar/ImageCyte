@@ -81,9 +81,20 @@
 }
 
 @keyframes beacon {
-  0% { transform: scale(0.85); opacity: 0.5; }
-  50% { transform: scale(1.15); opacity: 1; }
-  100% { transform: scale(0.85); opacity: 0.5; }
+  0% {
+    transform: scale(0.85);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.85);
+    opacity: 0.5;
+  }
 }
 
 .scan-id {
@@ -100,7 +111,9 @@
   gap: 12px;
 }
 
-.btn-resume, .btn-logout, .btn-retry {
+.btn-resume,
+.btn-logout,
+.btn-retry {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -145,7 +158,8 @@
   display: grid;
   grid-template-columns: 1fr 340px;
   flex: 1;
-  height: calc(100vh - 200px); /* Adjust based on drawer size */
+  height: calc(100vh - 200px);
+  /* Adjust based on drawer size */
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -378,9 +392,19 @@ canvas {
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-4px);
+  }
+
+  75% {
+    transform: translateX(4px);
+  }
 }
 
 .viewport-message h3 {
@@ -466,7 +490,8 @@ canvas {
   align-items: center;
 }
 
-.drawer-empty, .drawer-loader {
+.drawer-empty,
+.drawer-loader {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -488,7 +513,6 @@ canvas {
 /* History Card Items */
 .history-card-item {
   flex-shrink: 0;
-  width: 180px;
   background: rgba(30, 41, 59, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: 10px;
@@ -546,21 +570,25 @@ canvas {
 }
 
 /* Custom Scrollbars */
-.drawer-content::-webkit-scrollbar, .sidebar-panel::-webkit-scrollbar {
+.drawer-content::-webkit-scrollbar,
+.sidebar-panel::-webkit-scrollbar {
   height: 6px;
   width: 6px;
 }
 
-.drawer-content::-webkit-scrollbar-track, .sidebar-panel::-webkit-scrollbar-track {
+.drawer-content::-webkit-scrollbar-track,
+.sidebar-panel::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.2);
 }
 
-.drawer-content::-webkit-scrollbar-thumb, .sidebar-panel::-webkit-scrollbar-thumb {
+.drawer-content::-webkit-scrollbar-thumb,
+.sidebar-panel::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
 
-.drawer-content::-webkit-scrollbar-thumb:hover, .sidebar-panel::-webkit-scrollbar-thumb:hover {
+.drawer-content::-webkit-scrollbar-thumb:hover,
+.sidebar-panel::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 255, 200, 0.3);
 }
 

@@ -4,14 +4,16 @@ import json
 import logging
 from app.core.upstream_client import upstream_client
 from app.database.session import SessionLocal
-from app.database.models import ImageRecord
-from app.services.processor import process_microscopy_image
+from app.database.models import Image, ProcessingJob, ProcessingResult
+from app.services.processor import generate_canny_overlay, generate_otsu_overlay, generate_thumbnail
+from app.services.queue_manager import queue_manager
 
 logger = logging.getLogger(__name__)
 
 # Control flags
 running = False
 worker_task = None
+consumer_task = None
 
 def parse_upstream_timestamp(ts_str: str) -> datetime.datetime:
     """
@@ -24,7 +26,7 @@ def parse_upstream_timestamp(ts_str: str) -> datetime.datetime:
 async def poll_upstream():
     db = SessionLocal()
     try:
-        # 1. Fetch image
+        # 1. Fetch image from upstream
         img_res = await upstream_client.request("GET", "/api/image")
         if img_res.status_code != 200:
             logger.error(f"Failed to poll upstream image: {img_res.status_code} - {img_res.text}")
@@ -40,7 +42,7 @@ async def poll_upstream():
             return
             
         # 2. Check if deduplication criteria is met
-        latest_record = db.query(ImageRecord).order_by(ImageRecord.id.desc()).first()
+        latest_record = db.query(Image).order_by(Image.id.desc()).first()
         if latest_record and latest_record.image_id == image_id:
             logger.debug(f"Image {image_id} matches the latest record in database. Discarding ingestion.")
             return
@@ -67,33 +69,110 @@ async def poll_upstream():
         classification = res_data.get("classification_label", "Unknown")
         histogram_list = res_data.get("histogram", [])
         
-        # 4. Trigger classical CV processing pipeline
-        logger.info(f"Processing microscopy image {image_id}...")
-        processed_base64 = process_microscopy_image(raw_base64)
-        
-        # 5. Persist record to local SQLite DB
-        record = ImageRecord(
+        # Generate low-res thumbnail immediately for fast scrubbing (quick resize)
+        thumbnail_base64 = generate_thumbnail(raw_base64)
+
+        # 4. Persist core metadata and raw image to local SQLite DB
+        record = Image(
             image_id=image_id,
             timestamp=parse_upstream_timestamp(ts_str),
             raw_image_base64=raw_base64,
-            processed_image_base64=processed_base64,
+            thumbnail_base64=thumbnail_base64,
             intensity_average=float(intensity_avg),
             focus_score=float(focus_score),
             classification_label=str(classification),
             histogram_json=json.dumps(histogram_list)
         )
         db.add(record)
+        
+        # 5. Create pending processing job entry
+        job = ProcessingJob(
+            image_id=image_id,
+            status="pending"
+        )
+        db.add(job)
         db.commit()
-        logger.info(f"Successfully processed and stored new record for image {image_id}")
+        
+        # 6. Push job metadata to QueueManager for async execution
+        await queue_manager.push_job(image_id)
+        logger.info(f"Ingested and enqueued image {image_id}")
         
     except Exception as e:
         logger.error(f"Error in poll_upstream cycle: {e}", exc_info=True)
     finally:
         db.close()
 
+async def processing_consumer_loop():
+    logger.info("Starting background processing consumer loop...")
+    while running:
+        try:
+            # Await next job from QueueManager (non-blocking yield)
+            image_id = await queue_manager.get_job()
+            
+            db = SessionLocal()
+            try:
+                # Update status to processing
+                job = db.query(ProcessingJob).filter(ProcessingJob.image_id == image_id).order_by(ProcessingJob.id.desc()).first()
+                if not job:
+                    logger.warning(f"ProcessingJob for {image_id} not found.")
+                    queue_manager.task_done()
+                    continue
+                
+                job.status = "processing"
+                db.commit()
+                
+                # Fetch raw image
+                img_record = db.query(Image).filter(Image.image_id == image_id).first()
+                if not img_record:
+                    raise ValueError(f"Raw image metadata record for {image_id} missing from database.")
+                
+                # Compute Canny overlay
+                canny_base64 = generate_canny_overlay(img_record.raw_image_base64)
+                canny_res = ProcessingResult(
+                    image_id=image_id,
+                    process_type="canny",
+                    processed_image_base64=canny_base64
+                )
+                db.add(canny_res)
+                
+                # Compute Otsu overlay
+                otsu_base64 = generate_otsu_overlay(img_record.raw_image_base64)
+                otsu_res = ProcessingResult(
+                    image_id=image_id,
+                    process_type="otsu",
+                    processed_image_base64=otsu_base64
+                )
+                db.add(otsu_res)
+                
+                # Mark job as completed
+                job.status = "completed"
+                db.commit()
+                logger.info(f"Asynchronously processed overlays (Canny, Otsu) for image {image_id}")
+                
+            except Exception as e:
+                logger.error(f"Async processing failed for image {image_id}: {e}", exc_info=True)
+                # Rollback and save failed job state
+                try:
+                    db.rollback()
+                    job = db.query(ProcessingJob).filter(ProcessingJob.image_id == image_id).order_by(ProcessingJob.id.desc()).first()
+                    if job:
+                        job.status = "failed"
+                        job.error_message = str(e)
+                        db.commit()
+                except Exception as db_err:
+                    logger.error(f"Failed to record job failure state: {db_err}")
+            finally:
+                db.close()
+                queue_manager.task_done()
+                
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in processing consumer loop: {e}", exc_info=True)
+            await asyncio.sleep(1)
+
 async def ingest_worker_loop():
     global running
-    running = True
     logger.info("Starting central ingest background loop...")
     
     # Authenticate upstream client before starting poll loop
@@ -109,19 +188,21 @@ async def ingest_worker_loop():
     logger.info("Ingest worker loop stopped.")
 
 def start_worker():
-    global running, worker_task
+    global running, worker_task, consumer_task
     if not running:
+        running = True
         worker_task = asyncio.create_task(ingest_worker_loop())
+        consumer_task = asyncio.create_task(processing_consumer_loop())
 
 async def stop_worker():
-    global running, worker_task
+    global running, worker_task, consumer_task
     running = False
+    
+    # Shut down tasks
     if worker_task:
-        # Wait for task to finish or cancel it
-        try:
-            await asyncio.wait_for(worker_task, timeout=10.0)
-        except asyncio.TimeoutError:
-            worker_task.cancel()
-        except Exception as e:
-            logger.error(f"Exception during worker shutdown: {e}")
+        worker_task.cancel()
         worker_task = None
+    if consumer_task:
+        consumer_task.cancel()
+        consumer_task = None
+    logger.info("Ingestion and processing tasks cancelled successfully.")

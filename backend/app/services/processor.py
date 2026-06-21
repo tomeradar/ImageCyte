@@ -1,95 +1,114 @@
+import abc
 import base64
+# pyrefly: ignore [missing-import]
 import cv2
 import numpy as np
 
-def auto_canny(image: np.ndarray, sigma: float = 0.33) -> np.ndarray:
+class CVOverlayStrategy(abc.ABC):
     """
-    Computes Canny edge thresholds adaptively based on the median pixel intensity of the image.
+    Interface for classical computer vision image processing strategies.
+    Defines the contract to process a BGR numpy image and return an RGBA transparent overlay.
     """
-    v = np.median(image)
-    lower = int(max(0, (1.0 - sigma) * v))
-    upper = int(min(255, (1.0 + sigma) * v))
-    return cv2.Canny(image, lower, upper)
+    @abc.abstractmethod
+    def process(self, img: np.ndarray) -> np.ndarray:
+        pass
 
-def generate_canny_overlay(raw_image_base64: str) -> str:
+class CannyOverlayStrategy(CVOverlayStrategy):
     """
-    Applies classical CV Canny Edge Detection and returns a transparent PNG overlay
-    containing only the glowing neon green boundaries.
+    Strategy for Canny Edge Detection overlay mask creation.
     """
-    try:
-        img_bytes = base64.b64decode(raw_image_base64)
-        np_arr = np.frombuffer(img_bytes, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if img is None:
-            raise ValueError("Failed to decode image data.")
+    def __init__(self, sigma: float = 0.33):
+        self.sigma = sigma
 
+    def _auto_canny(self, image: np.ndarray) -> np.ndarray:
+        v = np.median(image)
+        lower = int(max(0, (1.0 - self.sigma) * v))
+        upper = int(min(255, (1.0 + self.sigma) * v))
+        return cv2.Canny(image, lower, upper)
+
+    def process(self, img: np.ndarray) -> np.ndarray:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        edges = auto_canny(gray)
+        edges = self._auto_canny(gray)
 
-        # Create transparent RGBA image
         h, w = edges.shape
         overlay = np.zeros((h, w, 4), dtype=np.uint8)
 
-        # Dilate edges to make them glow/pop
+        # Dilate edges slightly to make notches/lines glow
         kernel = np.ones((2, 2), np.uint8)
         dilated_edges = cv2.dilate(edges, kernel, iterations=1)
 
-        # Set green color with 255 alpha for detected edges (B=0, G=255, R=0, A=255)
+        # Bright neon green (GFP style): B=0, G=255, R=0, A=255
         overlay[dilated_edges > 0] = [0, 255, 0, 255]
+        return overlay
 
-        _, buffer = cv2.imencode('.png', overlay)
-        return base64.b64encode(buffer).decode('utf-8')
-    except Exception as e:
-        raise RuntimeError(f"Canny processing failed: {e}")
-
-def generate_otsu_overlay(raw_image_base64: str) -> str:
+class OtsuOverlayStrategy(CVOverlayStrategy):
     """
-    Applies Otsu's thresholding to isolate cell bodies and returns a transparent PNG
-    overlay containing semi-transparent neon orange mask overlays on cells.
+    Strategy for Otsu cell body segmentation overlay mask creation.
     """
-    try:
-        img_bytes = base64.b64decode(raw_image_base64)
-        np_arr = np.frombuffer(img_bytes, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if img is None:
-            raise ValueError("Failed to decode image data.")
-
+    def process(self, img: np.ndarray) -> np.ndarray:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
-        # Apply Otsu's Thresholding
         _, thresholded = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Create transparent RGBA image
         h, w = thresholded.shape
         overlay = np.zeros((h, w, 4), dtype=np.uint8)
 
-        # Set neon orange/red with 120 alpha for cells (B=0, G=100, R=255, A=120)
+        # Semi-transparent neon orange (cell bodies): B=0, G=100, R=255, A=120
         overlay[thresholded > 0] = [0, 100, 255, 120]
+        return overlay
 
-        _, buffer = cv2.imencode('.png', overlay)
-        return base64.b64encode(buffer).decode('utf-8')
-    except Exception as e:
-        raise RuntimeError(f"Otsu processing failed: {e}")
-
-def generate_thumbnail(raw_image_base64: str, width: int = 120, height: int = 90) -> str:
+class CVProcessorService:
     """
-    Generates a low-resolution base64 PNG thumbnail of the original image for fast history scrubbing tooltips.
+    Context executor service implementing strategy selection logic.
     """
-    try:
-        img_bytes = base64.b64decode(raw_image_base64)
-        np_arr = np.frombuffer(img_bytes, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if img is None:
-            raise ValueError("Failed to decode image data.")
+    def __init__(self):
+        self._strategies = {
+            "canny": CannyOverlayStrategy(),
+            "otsu": OtsuOverlayStrategy()
+        }
 
-        thumbnail = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
-        _, buffer = cv2.imencode('.png', thumbnail)
-        return base64.b64encode(buffer).decode('utf-8')
-    except Exception as e:
-        raise RuntimeError(f"Thumbnail generation failed: {e}")
+    def process_image(self, raw_image_base64: str, process_type: str) -> str:
+        """
+        Decodes a raw base64 BGR buffer, executes the registered overlay strategy,
+        and returns the resulting transparent overlay as a base64 PNG.
+        """
+        strategy = self._strategies.get(process_type)
+        if not strategy:
+            raise ValueError(f"Unknown overlay processing strategy '{process_type}'.")
 
+        try:
+            img_bytes = base64.b64decode(raw_image_base64)
+            np_arr = np.frombuffer(img_bytes, np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise ValueError("Failed to decode image BGR buffer.")
+
+            overlay_img = strategy.process(img)
+            
+            _, buffer = cv2.imencode('.png', overlay_img)
+            return base64.b64encode(buffer).decode('utf-8')
+        except Exception as e:
+            raise RuntimeError(f"Strategy '{process_type}' failed: {e}")
+
+    def generate_thumbnail(self, raw_image_base64: str, width: int = 120, height: int = 90) -> str:
+        """
+        Resizes a base64 BGR image to thumbnail sizes.
+        """
+        try:
+            img_bytes = base64.b64decode(raw_image_base64)
+            np_arr = np.frombuffer(img_bytes, np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise ValueError("Failed to decode image buffer.")
+
+            thumbnail = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+            _, buffer = cv2.imencode('.png', thumbnail)
+            return base64.b64encode(buffer).decode('utf-8')
+        except Exception as e:
+            raise RuntimeError(f"Thumbnail generation failed: {e}")
+
+# Singleton processor context service
+cv_processor_service = CVProcessorService()
+
+# Legacy compatibility wrapper
 def process_microscopy_image(raw_image_base64: str) -> str:
-    """
-    Legacy wrapper for compatibility: returns canny overlay.
-    """
-    return generate_canny_overlay(raw_image_base64)
+    return cv_processor_service.process_image(raw_image_base64, "canny")

@@ -1,0 +1,63 @@
+<section class="viewport-panel">
+  <div class="panel-header">
+    <h2>Microscope Feed</h2>
+    <div class="overlay-selectors" *ngIf="currentImage()">
+      <span class="selector-title">CV Overlays:</span>
+      <button 
+        [class.active]="selectedOverlays().includes('canny')"
+        (click)="toggleOverlay('canny')"
+        class="btn-overlay-toggle"
+      >
+        Canny Edges
+      </button>
+      <button 
+        [class.active]="selectedOverlays().includes('otsu')"
+        (click)="toggleOverlay('otsu')"
+        class="btn-overlay-toggle"
+      >
+        Otsu Cells
+      </button>
+    </div>
+  </div>
+
+  <div class="viewport-content">
+    <!-- Error Boundary State -->
+    <div *ngIf="hasError()" class="viewport-message error-state">
+      <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" class="message-icon">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <h3>Connection Error</h3>
+      <p>{{ errorMessage() }}</p>
+    </div>
+
+    <!-- Loading state -->
+    <div *ngIf="isLoading() && !hasError()" class="viewport-message loading-state">
+      <div class="loading-spinner"></div>
+      <h3>Connecting Stream...</h3>
+      <p>Downloading latest microscopy frame data</p>
+    </div>
+
+    <!-- Render Stream and Overlays -->
+    <div *ngIf="!isLoading() && !hasError() && currentImage()" class="image-wrapper">
+      <img 
+        [src]="'data:image/png;base64,' + currentImage()?.raw_image_base64" 
+        [alt]="'Microscopy frame ' + currentImage()?.image_id"
+        class="microscope-img base-image"
+      />
+      <!-- Canny transparent overlay mask -->
+      <img 
+        *ngIf="selectedOverlays().includes('canny') && currentImage()?.overlays?.['canny']"
+        [src]="'data:image/png;base64,' + currentImage()?.overlays?.['canny']"
+        class="overlay-image canny-layer"
+      />
+      <!-- Otsu transparent overlay mask -->
+      <img 
+        *ngIf="selectedOverlays().includes('otsu') && currentImage()?.overlays?.['otsu']"
+        [src]="'data:image/png;base64,' + currentImage()?.overlays?.['otsu']"
+        class="overlay-image otsu-layer"
+      />
+    </div>
+  </div>
+</section>

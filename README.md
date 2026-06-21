@@ -6,21 +6,31 @@ This project implements a full-stack Live Microscopy Dashboard. The system behav
 
 ## 1. Architectural Choices & Design Patterns
 
-### Smart caching Proxy
+### Smart Caching Proxy
 To protect the hosted upstream server, only a single backend background ingestion task polls the upstream server. The Angular client queries the local FastAPI database cache, avoiding redundant traffic and upstream throttling.
 
 ### Decoupled Processing (Swappable Queue Manager)
 CPU-intensive OpenCV processing tasks are completely decoupled from upstream fetching:
 1. The **Ingestion Worker** polls upstream, inserts raw metadata into the database immediately, inserts a pending job entry, and enqueues the job.
 2. An abstract **QueueManager** exposes simple `push_job` and `get_job` interfaces.
-3. A background **Processing Consumer** pulls from the queue, runs Canny edge and Otsu cell boundary detection, saves transparent mask PNG overlays, and marks jobs as completed.
+3. A background **Processing Consumer** pulls from the queue, runs processing strategies, saves transparent mask PNG overlays, and marks jobs as completed.
 4. **RabbitMQ/Celery Compatibility**: The queue manager uses a clean interface design. If scaling to a production broker like RabbitMQ or Celery is required, only the `QueueManager` implementation in `queue_manager.py` needs to be replaced.
+
+### Strategy Design Pattern for Computer Vision (CV)
+Overlays are generated dynamically using the **Strategy Design Pattern**:
+- **`CVOverlayStrategy`**: Abstract base class defining the execution interface.
+- **`CannyOverlayStrategy`**: Concrete strategy generating neon green transparent PNG edge boundary masks.
+- **`OtsuOverlayStrategy`**: Concrete strategy generating semi-transparent neon orange cell body masks.
+- **`CVProcessorService`**: Manages the strategies registry. Adding new computer vision filters in the future only requires adding a strategy class and registering it in this service.
+
+### Controller-Service Layer Decoupling (SOLID Principles)
+To avoid logic bleed in controller routers, FastAPI routes in `routers/image.py` are thin wrappers. All queries, timeframe window offsets calculations, database transactions, and data mappings are encapsulated in a dedicated **`ImageService`** layer.
 
 ### Relational SQLite Schema
 The local database uses a clean, normalized relational design containing three tables:
 - **`images`**: Core ingested frame metadata, raw high-res base64, and pre-computed `120x90` thumbnails for timeline previews.
 - **`processing_jobs`**: Job state tracking (`pending`, `processing`, `completed`, `failed`) and processing failure logs.
-- **`processing_results`**: Base64 transparent PNG overlay masks for different CV algorithms (e.g. Canny and Otsu).
+- **`processing_results`**: Base64 transparent PNG overlay masks for different CV algorithms.
 
 ### Transparent Stackable Overlays
 Overlays are generated as transparent PNG masks rather than pre-drawn on top of the original image:
@@ -39,7 +49,7 @@ To ensure single-responsibility clean code, the main `DashboardComponent` page h
 1. `DashboardComponent` (Orchestrates signals, state, and HTTP polling/fetching).
 2. `ViewportComponent` (Displays the raw image, stackable overlays, toggle controls, and loader states).
 3. `TimelineScrubBarComponent` (Handles mouse tracking, hover coordinates mapping, and floating tooltip).
-4. `HistogramComponent` (Drows pixel intensity columns on a native HTML5 canvas).
+4. `HistogramComponent` (Draws pixel intensity columns on a native HTML5 canvas).
 5. `MetricsComponent` (Displays KPI stats cards and classification status badges).
 
 ---

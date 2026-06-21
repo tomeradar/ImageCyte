@@ -1,0 +1,298 @@
+.timeline-container {
+  background: rgba(17, 24, 39, 0.95);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  height: 140px;
+  box-sizing: border-box;
+  padding: 10px 24px;
+}
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.header-info {
+  display: flex;
+  align-items: center;
+  color: #9ca3af;
+  gap: 6px;
+}
+.icon-spacing {
+  color: #00ffc8;
+}
+.timeline-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #ffffff;
+}
+.timeline-count {
+  font-size: 0.75rem;
+  color: #00ffc8;
+  background: rgba(0, 255, 200, 0.08);
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 255, 200, 0.15);
+}
+.timeline-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.timeline-empty {
+  width: 100%;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+.track-wrapper {
+  position: relative;
+  width: 100%;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  cursor: pointer;
+  padding-bottom: 8px;
+}
+
+/* Time Ruler */
+.time-ruler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 24px;
+  pointer-events: none;
+}
+.ruler-marker {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ruler-label {
+  font-family: monospace;
+  font-size: 0.65rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+.ruler-tick-mark {
+  width: 1px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  margin-top: 2px;
+}
+
+/* Track Bar */
+.track-bar {
+  width: 100%;
+  height: 6px;
+  background: #1f2937;
+  border-radius: 4px;
+  position: relative;
+  transition: height 0.15s ease;
+}
+.track-wrapper:hover .track-bar {
+  height: 8px;
+}
+.selected-progress {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(0, 159, 122, 0.3), rgba(0, 255, 200, 0.3));
+  border-radius: 4px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+/* Timeline ticks notches */
+.timeline-tick {
+  position: absolute;
+  width: 4px;
+  height: 12px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: all 0.2s ease;
+  border-radius: 1px;
+}
+.track-wrapper:hover .timeline-tick {
+  height: 16px;
+  width: 5px;
+}
+
+/* Notches color-coding */
+.timeline-tick.tick-healthy {
+  background: #10b981;
+  box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
+}
+.timeline-tick.tick-abnormal {
+  background: #fbbf24;
+  box-shadow: 0 0 4px rgba(251, 191, 36, 0.6);
+}
+.timeline-tick.active {
+  background: #00ffc8;
+  box-shadow: 0 0 10px #00ffc8;
+  width: 6px;
+  height: 18px;
+  z-index: 10;
+}
+
+/* Vertical active playhead tracker line */
+.active-playhead-line {
+  position: absolute;
+  top: -12px;
+  height: 32px;
+  width: 2px;
+  background: #00ffc8;
+  pointer-events: none;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+.playhead-handle {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  background: #00ffc8;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #00ffc8;
+}
+
+/* Red Hover Playhead Line (like YouTube) */
+.hover-playhead-line {
+  position: absolute;
+  top: -12px;
+  height: 32px;
+  width: 1px;
+  background: #ef4444;
+  pointer-events: none;
+  transform: translateX(-50%);
+  opacity: 0.8;
+  z-index: 4;
+}
+
+/* Floating Tooltip */
+.scrub-tooltip {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  width: 240px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  gap: 10px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 100;
+  animation: fadeIn 0.1s ease-out;
+}
+.scrub-tooltip.border-healthy {
+  border-color: #10b981;
+}
+.scrub-tooltip.border-warning {
+  border-color: #fbbf24;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, 5px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.tooltip-arrow {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid rgba(15, 23, 42, 0.95);
+}
+.tooltip-thumbnail {
+  width: 80px;
+  height: 60px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.tooltip-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.no-thumbnail {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  color: #4b5563;
+}
+.tooltip-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+.tooltip-row.header {
+  margin-bottom: 2px;
+}
+.tooltip-id {
+  font-family: monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tooltip-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.badge-healthy {
+  background: rgba(16, 185, 129, 0.1);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.badge-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+.tooltip-row.details {
+  font-size: 0.65rem;
+  color: #9ca3af;
+  margin-bottom: 2px;
+}
+.tooltip-time {
+  font-size: 0.6rem;
+  color: #6b7280;
+}

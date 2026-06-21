@@ -5,44 +5,8 @@ import { CommonModule } from '@angular/common';
   selector: 'app-histogram',
   standalone: true,
   imports: [CommonModule],
-  template: `
-    <div class="sidebar-card histogram-card">
-      <h3>Pixel Intensity Histogram</h3>
-      <div class="canvas-container">
-        <canvas #histogramCanvas width="300" height="150"></canvas>
-      </div>
-    </div>
-  `,
-  styles: [`
-    .sidebar-card {
-      background: rgba(30, 41, 59, 0.25);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 14px;
-      padding: 20px;
-    }
-    .sidebar-card h3 {
-      font-family: 'Outfit', sans-serif;
-      font-size: 0.95rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #9ca3af;
-      margin: 0 0 16px 0;
-    }
-    .canvas-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #030712;
-      border-radius: 8px;
-      padding: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.03);
-    }
-    canvas {
-      max-width: 100%;
-      display: block;
-    }
-  `]
+  templateUrl: './histogram.component.html',
+  styleUrls: ['./histogram.component.css']
 })
 export class HistogramComponent {
   histogram = input<number[]>([]);
@@ -50,7 +14,6 @@ export class HistogramComponent {
   @ViewChild('histogramCanvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
 
   constructor() {
-    // Reactively trigger canvas redraw when signal updates
     effect(() => {
       const data = this.histogram();
       this.draw(data);

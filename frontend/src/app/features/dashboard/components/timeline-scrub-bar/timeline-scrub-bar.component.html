@@ -1,0 +1,118 @@
+<footer class="timeline-container">
+  <div class="timeline-header">
+    <div class="header-info">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" class="icon-spacing">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <span class="timeline-title">Scrub Ingestion History</span>
+    </div>
+    <span class="timeline-count" *ngIf="historyList().length">
+      {{ historyList().length }} frames cached
+    </span>
+  </div>
+
+  <div class="timeline-body">
+    <div *ngIf="historyList().length === 0" class="timeline-empty">
+      No records cached in this timeframe.
+    </div>
+
+    <div 
+      *ngIf="historyList().length > 0"
+      class="track-wrapper"
+      (mousemove)="onMouseMove($event)"
+      (mouseleave)="onMouseLeave()"
+      (click)="onClick($event)"
+      #trackContainer
+    >
+      <!-- Time Ruler Labels at the top of the track -->
+      <div class="time-ruler">
+        <div 
+          *ngFor="let marker of timeMarkers()" 
+          class="ruler-marker"
+          [style.left.%]="marker.ratio * 100"
+        >
+          <span class="ruler-label">{{ marker.label }}</span>
+          <div class="ruler-tick-mark"></div>
+        </div>
+      </div>
+
+      <!-- The visual scrubbing track line -->
+      <div class="track-bar">
+        <!-- Selected Image indicator region (filled progress) -->
+        <div 
+          *ngIf="selectedRatio() !== null"
+          class="selected-progress"
+          [style.width.%]="selectedRatio()! * 100"
+        ></div>
+
+        <!-- Ticks color-coded by classification status -->
+        <div 
+          *ngFor="let item of sortedHistory()"
+          class="timeline-tick"
+          [class.tick-healthy]="item.classification_label === 'Healthy'"
+          [class.tick-abnormal]="item.classification_label !== 'Healthy'"
+          [class.active]="currentImageId() === item.image_id"
+          [style.left.%]="getRatio(item) * 100"
+          [title]="item.image_id + ' - ' + item.classification_label"
+        ></div>
+
+        <!-- Vertical Playhead Line for current selection -->
+        <div 
+          *ngIf="selectedRatio() !== null"
+          class="active-playhead-line"
+          [style.left.%]="selectedRatio()! * 100"
+        >
+          <div class="playhead-handle"></div>
+        </div>
+
+        <!-- Hover Playhead Line (red line following mouse cursor) -->
+        <div 
+          *ngIf="hoverRatio() !== null"
+          class="hover-playhead-line"
+          [style.left.%]="hoverRatio()! * 100"
+        ></div>
+      </div>
+
+      <!-- The Floating YouTube-style Tooltip Preview -->
+      <div 
+        *ngIf="hoveredItem() && tooltipX() !== null"
+        class="scrub-tooltip"
+        [class.border-healthy]="hoveredItem()?.classification_label === 'Healthy'"
+        [class.border-warning]="hoveredItem()?.classification_label !== 'Healthy'"
+        [style.left.px]="tooltipX()"
+      >
+        <div class="tooltip-arrow"></div>
+        
+        <div class="tooltip-thumbnail">
+          <img 
+            *ngIf="hoveredItem()?.thumbnail_base64"
+            [src]="'data:image/png;base64,' + hoveredItem()?.thumbnail_base64" 
+            alt="Thumbnail"
+          />
+          <div *ngIf="!hoveredItem()?.thumbnail_base64" class="no-thumbnail">No Preview</div>
+        </div>
+
+        <div class="tooltip-meta">
+          <div class="tooltip-row header">
+            <span class="tooltip-id">{{ hoveredItem()?.image_id }}</span>
+            <span 
+              class="tooltip-badge" 
+              [class.badge-healthy]="hoveredItem()?.classification_label === 'Healthy'"
+              [class.badge-warning]="hoveredItem()?.classification_label !== 'Healthy'"
+            >
+              {{ hoveredItem()?.classification_label }}
+            </span>
+          </div>
+          <div class="tooltip-row details">
+            <span>Int: {{ hoveredItem()?.intensity_average?.toFixed(1) }}</span>
+            <span>Focus: {{ hoveredItem()?.focus_score?.toFixed(2) }}</span>
+          </div>
+          <div class="tooltip-time">
+            {{ hoveredItem()?.timestamp | date:'HH:mm:ss (MM/dd)' }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>

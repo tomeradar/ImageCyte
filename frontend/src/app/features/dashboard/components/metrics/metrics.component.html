@@ -1,0 +1,26 @@
+<div class="sidebar-card metrics-card">
+  <h3>Frame Analytics</h3>
+  <div class="metrics-grid" *ngIf="currentImage()">
+    <div class="metric-item">
+      <span class="metric-title">Intensity Avg</span>
+      <span class="metric-value">{{ currentImage()?.intensity_average?.toFixed(2) }}</span>
+    </div>
+    <div class="metric-item">
+      <span class="metric-title">Focus Score</span>
+      <span class="metric-value">{{ currentImage()?.focus_score?.toFixed(2) }}</span>
+    </div>
+    <div class="metric-item full-width">
+      <span class="metric-title">Classification</span>
+      <span 
+        class="classification-badge" 
+        [class.badge-healthy]="currentImage()?.classification_label === 'Healthy'" 
+        [class.badge-warning]="currentImage()?.classification_label !== 'Healthy'"
+      >
+        {{ currentImage()?.classification_label }}
+      </span>
+    </div>
+  </div>
+  <div *ngIf="!currentImage()" class="no-data-placeholder">
+    No metrics available
+  </div>
+</div>

@@ -1,3 +1,4 @@
+from app.core.config import settings
 import asyncio
 import datetime
 import json
@@ -5,7 +6,7 @@ import logging
 from app.core.upstream_client import upstream_client
 from app.database.session import SessionLocal
 from app.database.models import Image, ProcessingJob, ProcessingResult
-from app.services.processor import generate_canny_overlay, generate_otsu_overlay, generate_thumbnail
+from app.services.processor import cv_processor_service
 from app.services.queue_manager import queue_manager
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ async def poll_upstream():
         histogram_list = res_data.get("histogram", [])
         
         # Generate low-res thumbnail immediately for fast scrubbing (quick resize)
-        thumbnail_base64 = generate_thumbnail(raw_base64)
+        thumbnail_base64 = cv_processor_service.generate_thumbnail(raw_base64)
 
         # 4. Persist core metadata and raw image to local SQLite DB
         record = Image(
@@ -127,7 +128,7 @@ async def processing_consumer_loop():
                     raise ValueError(f"Raw image metadata record for {image_id} missing from database.")
                 
                 # Compute Canny overlay
-                canny_base64 = generate_canny_overlay(img_record.raw_image_base64)
+                canny_base64 = cv_processor_service.process_image(img_record.raw_image_base64, "canny")
                 canny_res = ProcessingResult(
                     image_id=image_id,
                     process_type="canny",
@@ -136,7 +137,7 @@ async def processing_consumer_loop():
                 db.add(canny_res)
                 
                 # Compute Otsu overlay
-                otsu_base64 = generate_otsu_overlay(img_record.raw_image_base64)
+                otsu_base64 = cv_processor_service.process_image(img_record.raw_image_base64, "otsu")
                 otsu_res = ProcessingResult(
                     image_id=image_id,
                     process_type="otsu",
@@ -183,7 +184,7 @@ async def ingest_worker_loop():
             await poll_upstream()
         except Exception as e:
             logger.error(f"Error in ingest worker loop iteration: {e}", exc_info=True)
-        await asyncio.sleep(5)
+        await asyncio.sleep(settings.POLLING_INTERVAL)
         
     logger.info("Ingest worker loop stopped.")
 

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - UPSTREAM_URL=https://assignment-server-rv-866595813231.us-central1.run.app/
+      - UPSTREAM_USERNAME=tomer.adar
+      - UPSTREAM_PASSWORD=chip2255
+      - POLLING_INTERVAL=5
+      - DATABASE_URL=sqlite:////workspace/data/microscopy.db
+    volumes:
+      - db_data:/workspace/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "4200:4200"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

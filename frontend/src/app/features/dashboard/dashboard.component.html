@@ -1,0 +1,165 @@
+<div class="dashboard-container">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-logo">
+      <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" class="header-logo-icon">
+        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </svg>
+      <span class="app-title">ImageCyte AI</span>
+    </div>
+    
+    <div class="header-status">
+      <span class="status-badge" [class.live]="isLiveMode()" [class.paused]="!isLiveMode()">
+        <span class="pulse-indicator" *ngIf="isLiveMode()"></span>
+        {{ isLiveMode() ? 'Live Feed' : 'Historical Snapshot' }}
+      </span>
+      <span class="scan-id" *ngIf="currentImage()">ID: {{ currentImage()?.image_id }}</span>
+    </div>
+
+    <div class="header-actions">
+      <button *ngIf="!isLiveMode()" (click)="resumeLive()" class="btn-resume">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" class="icon-spacing">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        Resume Live
+      </button>
+      <button (click)="logout()" class="btn-logout">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" class="icon-spacing">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Sign Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Grid Workspace -->
+  <main class="workspace-grid">
+    <!-- Central Image panel -->
+    <section class="viewport-panel">
+      <div class="panel-header">
+        <h2>Microscope Feed</h2>
+        <div class="toggle-wrapper" *ngIf="currentImage()">
+          <span class="toggle-label" [class.active]="!showProcessed()">Original</span>
+          <button (click)="toggleOverlay()" class="switch-toggle" [class.toggled]="showProcessed()">
+            <span class="switch-knob"></span>
+          </button>
+          <span class="toggle-label" [class.active]="showProcessed()">Processed Overlay</span>
+        </div>
+      </div>
+
+      <div class="viewport-content">
+        <!-- Error Boundary State -->
+        <div *ngIf="hasError()" class="viewport-message error-state">
+          <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" class="message-icon">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <h3>Connection Error</h3>
+          <p>{{ errorMessage() }}</p>
+          <button (click)="startLiveStream()" class="btn-retry">Retry Connection</button>
+        </div>
+
+        <!-- Loading / Reconnect state -->
+        <div *ngIf="isLoading() && !hasError()" class="viewport-message loading-state">
+          <div class="loading-spinner"></div>
+          <h3>Connecting Stream...</h3>
+          <p>Downloading latest microscopy frame data</p>
+        </div>
+
+        <!-- Render Stream -->
+        <div *ngIf="!isLoading() && !hasError() && currentImage()" class="image-wrapper">
+          <img 
+            [src]="'data:image/png;base64,' + (showProcessed() ? currentImage()?.processed_image_base64 : currentImage()?.raw_image_base64)" 
+            [alt]="'Microscopy frame ' + currentImage()?.image_id"
+            class="microscope-img"
+          />
+        </div>
+      </div>
+    </section>
+
+    <!-- Sidebar Metrics & Histogram -->
+    <aside class="sidebar-panel">
+      <!-- Section 1: Metrics -->
+      <div class="sidebar-card metrics-card">
+        <h3>Frame Analytics</h3>
+        <div class="metrics-grid" *ngIf="currentImage()">
+          <div class="metric-item">
+            <span class="metric-title">Intensity Avg</span>
+            <span class="metric-value">{{ currentImage()?.intensity_average?.toFixed(2) }}</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-title">Focus Score</span>
+            <span class="metric-value">{{ currentImage()?.focus_score?.toFixed(2) }}</span>
+          </div>
+          <div class="metric-item full-width">
+            <span class="metric-title">Classification</span>
+            <span class="classification-badge" [class.badge-healthy]="currentImage()?.classification_label === 'Healthy'" [class.badge-warning]="currentImage()?.classification_label !== 'Healthy'">
+              {{ currentImage()?.classification_label }}
+            </span>
+          </div>
+        </div>
+        <div *ngIf="!currentImage() && !isLoading()" class="no-data-placeholder">
+          No metrics available
+        </div>
+      </div>
+
+      <!-- Section 2: Histogram -->
+      <div class="sidebar-card histogram-card">
+        <h3>Pixel Intensity Histogram</h3>
+        <div class="canvas-container">
+          <canvas #histogramCanvas width="320" height="180"></canvas>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Collapsible bottom drawer for history -->
+  <footer class="history-drawer">
+    <div class="drawer-header">
+      <div class="drawer-header-left">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" class="icon-spacing">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <h3>Scan Ingestion History</h3>
+      </div>
+      <span class="drawer-count" *ngIf="historyList().length">{{ historyList().length }} scans cached</span>
+    </div>
+
+    <div class="drawer-content">
+      <div *ngIf="isHistoryLoading() && historyList().length === 0" class="drawer-loader">
+        <div class="loading-spinner-small"></div>
+        <span>Loading history...</span>
+      </div>
+      
+      <div *ngIf="historyList().length === 0 && !isHistoryLoading()" class="drawer-empty">
+        No records in database.
+      </div>
+
+      <div 
+        *ngFor="let item of historyList()" 
+        (click)="selectHistoryItem(item)" 
+        class="history-card-item"
+        [class.selected]="currentImage()?.image_id === item.image_id"
+      >
+        <div class="history-card-header">
+          <span class="history-id">{{ item.image_id }}</span>
+          <span class="history-badge" [class.badge-healthy]="item.classification_label === 'Healthy'" [class.badge-warning]="item.classification_label !== 'Healthy'">
+            {{ item.classification_label }}
+          </span>
+        </div>
+        <div class="history-card-details">
+          <span>Int: {{ item.intensity_average.toFixed(1) }}</span>
+          <span>Focus: {{ item.focus_score.toFixed(2) }}</span>
+        </div>
+        <div class="history-card-time">
+          {{ item.timestamp | date:'HH:mm:ss (MM/dd)' }}
+        </div>
+      </div>
+    </div>
+  </footer>
+</div>

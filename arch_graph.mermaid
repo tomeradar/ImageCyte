@@ -1,0 +1,42 @@
+graph TD
+    subgraph User["👤 User"]
+        Browser["Browser"]
+    end
+
+    subgraph Frontend["🅰️ Angular Frontend"]
+        Login["Login Page"]
+        Dashboard["Dashboard\n(live view + history)"]
+    end
+
+    subgraph Backend["🐍 FastAPI Backend"]
+        AuthProxy["Auth Proxy\n/api/proxy/login|refresh"]
+        ImageAPI["Image API\n/api/image/latest\n/api/history"]
+        IngestWorker["Ingest Worker\n(polls every 5s)"]
+        CVProcessor["CV Processor\n(Canny + Otsu overlays)"]
+        JobQueue["Async Job Queue"]
+        SQLite[("SQLite DB\nImages · Jobs · Results")]
+    end
+
+    subgraph External["☁️ External"]
+        Upstream["Upstream Microscopy Server"]
+    end
+
+    %% User flow
+    Browser --> Login
+    Login -->|"credentials"| AuthProxy
+    AuthProxy -->|"JWT tokens"| Login
+    Login -->|"on success"| Dashboard
+
+    %% Live dashboard
+    Dashboard -->|"GET latest image\n+ history (every 3s)"| ImageAPI
+    ImageAPI -->|"reads"| SQLite
+
+    %% Auth validation
+    Dashboard -->|"Bearer token\n(validated per request)"| Upstream
+
+    %% Background ingestion pipeline
+    IngestWorker -->|"poll GET /api/image\nGET /api/results"| Upstream
+    IngestWorker -->|"save image + metadata"| SQLite
+    IngestWorker -->|"enqueue job"| JobQueue
+    JobQueue -->|"dequeue"| CVProcessor
+    CVProcessor -->|"save Canny + Otsu overlays"| SQLite

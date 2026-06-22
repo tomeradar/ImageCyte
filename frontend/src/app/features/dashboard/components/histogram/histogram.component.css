@@ -1,0 +1,28 @@
+.sidebar-card {
+  background: rgba(30, 41, 59, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 20px;
+}
+.sidebar-card h3 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+  margin: 0 0 16px 0;
+}
+.canvas-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #030712;
+  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+canvas {
+  max-width: 100%;
+  display: block;
+}

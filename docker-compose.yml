@@ -12,9 +12,10 @@ services:
       - UPSTREAM_USERNAME=tomer.adar
       - UPSTREAM_PASSWORD=chip2255
       - POLLING_INTERVAL=5
+      - PYTHONUNBUFFERED=1
       - DATABASE_URL=sqlite:////workspace/data/microscopy.db
     volumes:
-      - db_data:/workspace/data
+      - ./data:/workspace/data
 
   frontend:
     build:
@@ -25,5 +26,10 @@ services:
     depends_on:
       - backend
 
-volumes:
-  db_data:
+  dozzle:
+    image: amir20/dozzle:latest
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+

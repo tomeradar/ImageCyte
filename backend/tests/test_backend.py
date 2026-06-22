@@ -194,3 +194,47 @@ def test_log_managed_error(caplog):
         assert "ERR_IMAGE_DECODING" in caplog.text
         assert "Corrupted buffer input test" in caplog.text
 
+# 7. Ingestion worker deduplication test
+from unittest.mock import AsyncMock, MagicMock, patch
+from app.services.ingest_worker import poll_upstream
+
+@pytest.mark.asyncio
+async def test_poll_upstream_deduplication(caplog):
+    import logging
+    # Create mock response object
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    # Simulate upstream returning ONLY image_id when unchanged
+    mock_response.json = MagicMock(return_value={"image_id": "img_duplicate_test"})
+
+    # Mock DB SessionLocal
+    engine = create_engine("sqlite:///:memory:")
+    SessionTesting = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = SessionTesting()
+    
+    # Pre-populate database with this image_id to trigger deduplication
+    img = Image(
+        image_id="img_duplicate_test",
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+        raw_image_base64="raw_data",
+        thumbnail_base64="thumb_data",
+        intensity_average=100.5,
+        focus_score=0.92,
+        classification_label="Healthy",
+        histogram_json=json.dumps([0] * 256)
+    )
+    db.add(img)
+    db.commit()
+    
+    with patch("app.services.ingest_worker.upstream_client.request", return_value=mock_response), \
+         patch("app.services.ingest_worker.SessionLocal", return_value=db), \
+         caplog.at_level(logging.ERROR):
+         
+        await poll_upstream()
+        
+        # Verify that NO errors were logged because it deduplicated successfully
+        errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(errors) == 0
+
+

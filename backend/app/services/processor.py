@@ -137,7 +137,3 @@ class CVProcessorService:
 
 # Singleton processor context service
 cv_processor_service = CVProcessorService()
-
-# Legacy compatibility wrapper
-def process_microscopy_image(raw_image_base64: str) -> str:
-    return cv_processor_service.process_image(raw_image_base64, "canny")

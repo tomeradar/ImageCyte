@@ -105,7 +105,7 @@ Clients view metadata and stackable overlays directly from the local cache datab
 
 ### Log Viewer (Dozzle)
 You can view rich backend logs, line numbers, database queries, and frontend console output in real-time by opening:
-`http://localhost:8888`
+`http://localhost:9999`
 
 ---
 

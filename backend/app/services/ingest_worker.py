@@ -45,10 +45,20 @@ async def poll_upstream():
             ) from je
         
         image_id = img_data.get("image_id")
+        if not image_id:
+            logger.error("Ingest Worker: Upstream image response missing 'image_id'")
+            return
+
+        # 2. Check if deduplication criteria is met (optimized checking for bandwidth-saving upstream responses)
+        latest_record = db.query(Image).order_by(Image.id.desc()).first()
+        if latest_record and latest_record.image_id == image_id:
+            logger.info(f"Ingest Worker: Image '{image_id}' matches the latest database record. Discarding ingestion.")
+            return
+
         raw_base64 = img_data.get("image_data_base64")
         ts_str = img_data.get("timestamp")
         
-        if not image_id or not raw_base64 or not ts_str:
+        if not raw_base64 or not ts_str:
             logger.error(f"Ingest Worker: Upstream image response missing key data. Keys: {list(img_data.keys())}")
             return
             
@@ -57,14 +67,6 @@ async def poll_upstream():
             logger.warning(f"Ingest Worker: Discarding image '{image_id}' because it is corrupted/damaged.")
             return
 
-        logger.info(f"Ingest Worker: Retrieved image '{image_id}' from upstream. Checking deduplication...")
-        
-        # 2. Check if deduplication criteria is met
-        latest_record = db.query(Image).order_by(Image.id.desc()).first()
-        if latest_record and latest_record.image_id == image_id:
-            logger.info(f"Ingest Worker: Image '{image_id}' matches the latest database record. Discarding ingestion.")
-            return
-            
         logger.info(f"Ingest Worker: New image detected: '{image_id}'. Fetching cell analysis results from upstream...")
         
         # 3. Fetch results

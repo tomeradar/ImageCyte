@@ -3,6 +3,27 @@ import base64
 # pyrefly: ignore [missing-import]
 import cv2
 import numpy as np
+import logging
+from app.core.exceptions import handle_cv_errors, ImageProcessingError
+
+logger = logging.getLogger(__name__)
+
+def get_placeholder_thumbnail_base64() -> str:
+    """
+    Generates a 120x90 solid gray placeholder image with red "Error" text,
+    encoded as a base64 string. Fallbacks to a 1x1 pixel image if cv2 fails.
+    """
+    try:
+        # 120x90 gray background
+        img = np.full((90, 120, 3), 200, dtype=np.uint8)
+        # Draw red "Error" text
+        cv2.putText(img, "Error", (40, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+        _, buffer = cv2.imencode('.png', img)
+        return base64.b64encode(buffer).decode('utf-8')
+    except Exception as e:
+        logger.error(f"Failed to generate custom fallback thumbnail: {e}", exc_info=True)
+        # 1x1 gray pixel PNG base64 fallback
+        return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mMs+Q8AAQcBRzR5X6gAAAAASUVORK5CYII="
 
 class CVOverlayStrategy(abc.ABC):
     """
@@ -66,6 +87,7 @@ class CVProcessorService:
             "otsu": OtsuOverlayStrategy()
         }
 
+    @handle_cv_errors()
     def process_image(self, raw_image_base64: str, process_type: str) -> str:
         """
         Decodes a raw base64 BGR buffer, executes the registered overlay strategy,
@@ -75,36 +97,31 @@ class CVProcessorService:
         if not strategy:
             raise ValueError(f"Unknown overlay processing strategy '{process_type}'.")
 
-        try:
-            img_bytes = base64.b64decode(raw_image_base64)
-            np_arr = np.frombuffer(img_bytes, np.uint8)
-            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if img is None:
-                raise ValueError("Failed to decode image BGR buffer.")
+        img_bytes = base64.b64decode(raw_image_base64)
+        np_arr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Failed to decode image BGR buffer.")
 
-            overlay_img = strategy.process(img)
-            
-            _, buffer = cv2.imencode('.png', overlay_img)
-            return base64.b64encode(buffer).decode('utf-8')
-        except Exception as e:
-            raise RuntimeError(f"Strategy '{process_type}' failed: {e}")
+        overlay_img = strategy.process(img)
+        
+        _, buffer = cv2.imencode('.png', overlay_img)
+        return base64.b64encode(buffer).decode('utf-8')
 
+    @handle_cv_errors(fallback_factory=get_placeholder_thumbnail_base64)
     def generate_thumbnail(self, raw_image_base64: str, width: int = 120, height: int = 90) -> str:
         """
-        Resizes a base64 BGR image to thumbnail sizes.
+        Resizes a base64 BGR image to thumbnail sizes. Falls back to a custom gray placeholder on error.
         """
-        try:
-            img_bytes = base64.b64decode(raw_image_base64)
-            np_arr = np.frombuffer(img_bytes, np.uint8)
-            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if img is None:
-                raise ValueError("Failed to decode image buffer.")
+        img_bytes = base64.b64decode(raw_image_base64)
+        np_arr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Failed to decode image buffer.")
 
-            thumbnail = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
-            _, buffer = cv2.imencode('.png', thumbnail)
-            return base64.b64encode(buffer).decode('utf-8')
-        except Exception as e:
-            raise RuntimeError(f"Thumbnail generation failed: {e}")
+        thumbnail = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+        _, buffer = cv2.imencode('.png', thumbnail)
+        return base64.b64encode(buffer).decode('utf-8')
 
 # Singleton processor context service
 cv_processor_service = CVProcessorService()

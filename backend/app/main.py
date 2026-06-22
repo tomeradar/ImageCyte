@@ -6,12 +6,10 @@ from app.core.config import settings
 from app.database.session import engine, Base
 from app.services.ingest_worker import start_worker, stop_worker
 from app.routers import auth, image
+from app.core.logging_config import setup_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+# Configure logging using our rich logger configuration
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Initialize SQLite database and tables

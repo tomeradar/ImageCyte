@@ -38,6 +38,15 @@ const addTokenHeader = (request: HttpRequest<any>, token: string) => {
 };
 
 const handle401Error = (request: HttpRequest<any>, next: HttpHandlerFn, authService: AuthService): Observable<HttpEvent<any>> => {
+  const currentToken = authService.getAccessToken();
+  const requestToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim();
+
+  if (currentToken && requestToken && currentToken !== requestToken) {
+    // The access token has already been refreshed in the background by another concurrent request.
+    // We can immediately retry the failed request using the new token without refreshing again.
+    return next(addTokenHeader(request, currentToken));
+  }
+
   if (!isRefreshing) {
     isRefreshing = true;
     refreshTokenSubject.next(null);

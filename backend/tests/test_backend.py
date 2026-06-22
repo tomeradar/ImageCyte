@@ -141,7 +141,6 @@ def test_image_service():
         assert detail.overlays["canny"] == "canny_overlay_data"
     finally:
         db.close()
-
 # 5. QueueManager Tests
 @pytest.mark.asyncio
 async def test_queue_manager():
@@ -149,3 +148,49 @@ async def test_queue_manager():
     retrieved = await queue_manager.get_job()
     assert retrieved == "img_abc"
     queue_manager.task_done()
+
+# 6. CV Error Decorator and Fallback Tests
+from app.core.exceptions import (
+    AppException,
+    ErrorCode,
+    ImageProcessingError,
+    ImageDecodingError,
+    handle_cv_errors,
+    log_managed_error
+)
+
+def test_cv_errors_decorator_without_fallback():
+    @handle_cv_errors()
+    def failing_function(data):
+        raise ValueError("Failed to decode image BGR buffer.")
+        
+    with pytest.raises(ImageDecodingError) as exc_info:
+        failing_function("some_base64_data")
+    assert "Failed to decode image" in str(exc_info.value)
+    assert exc_info.value.error_code == ErrorCode.IMAGE_DECODING
+    assert exc_info.value.details["arg_0"]["length"] == len("some_base64_data")
+
+def test_generate_thumbnail_corrupt_fallback():
+    # Calling generate_thumbnail with corrupt/invalid base64 input should NOT crash
+    # Instead, it should trigger fallback and return the valid placeholder base64
+    corrupt_input = "invalid_base64_data_!!"
+    fallback_result = cv_processor_service.generate_thumbnail(corrupt_input)
+    assert fallback_result is not None
+    # Verify that it decodes to a valid image
+    result_bytes = base64.b64decode(fallback_result)
+    result_arr = np.frombuffer(result_bytes, np.uint8)
+    result_img = cv2.imdecode(result_arr, cv2.IMREAD_COLOR)
+    assert result_img is not None
+    assert result_img.shape[0] == 90
+    assert result_img.shape[1] == 120
+
+def test_log_managed_error(caplog):
+    import logging
+    with caplog.at_level(logging.ERROR):
+        exc = ImageDecodingError("Corrupted buffer input test", {"arg_0": "test"})
+        log_managed_error(exc)
+        assert len(caplog.records) == 1
+        assert "[MANAGED_ERROR]" in caplog.text
+        assert "ERR_IMAGE_DECODING" in caplog.text
+        assert "Corrupted buffer input test" in caplog.text
+

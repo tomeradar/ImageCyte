@@ -2,6 +2,7 @@ import time
 import httpx
 import logging
 from app.core.config import settings
+from app.core.exceptions import UpstreamConnectionError, UpstreamAuthError
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class UpstreamClient:
         await self.client.aclose()
 
     async def login(self) -> bool:
-        logger.info("Logging into upstream server...")
+        logger.info(f"Initiating login request to upstream server for username: '{settings.UPSTREAM_USERNAME}'...")
         try:
             res = await self.client.post(
                 "/api/auth/login",
@@ -35,21 +36,23 @@ class UpstreamClient:
                 self.access_token = data["access_token"]
                 self.refresh_token = data["refresh_token"]
                 # Store expires_at as current time + expires_in
-                self.expires_at = time.time() + data.get("expires_in", 60)
-                logger.info("Successfully logged into upstream server.")
+                expires_in = data.get("expires_in", 60)
+                self.expires_at = time.time() + expires_in
+                logger.info(f"Successfully logged into upstream server. Token expires in {expires_in} seconds.")
                 return True
             else:
-                logger.error(f"Upstream login failed with status {res.status_code}: {res.text}")
+                logger.error(f"Upstream login failed with status {res.status_code}. Response content: {res.text}")
                 return False
         except Exception as e:
-            logger.error(f"Upstream login exception: {e}")
+            logger.error(f"Upstream login exception occurred: {e}", exc_info=True)
             return False
 
     async def refresh_upstream_token(self) -> bool:
         if not self.refresh_token:
+            logger.warning("No refresh token found. Attempting full login to upstream...")
             return await self.login()
         
-        logger.info("Refreshing upstream token...")
+        logger.info(f"Initiating token refresh request to upstream server with refresh_token (len={len(self.refresh_token)})...")
         try:
             res = await self.client.post(
                 "/api/auth/refresh",
@@ -59,14 +62,15 @@ class UpstreamClient:
                 data = res.json()
                 self.access_token = data["access_token"]
                 self.refresh_token = data["refresh_token"]
-                self.expires_at = time.time() + data.get("expires_in", 60)
-                logger.info("Successfully refreshed upstream token.")
+                expires_in = data.get("expires_in", 60)
+                self.expires_at = time.time() + expires_in
+                logger.info(f"Successfully refreshed upstream token. New token expires in {expires_in} seconds.")
                 return True
             else:
-                logger.warning(f"Upstream token refresh failed with status {res.status_code}. Re-authenticating...")
+                logger.warning(f"Upstream token refresh failed with status {res.status_code}. Re-authenticating via login...")
                 return await self.login()
         except Exception as e:
-            logger.error(f"Upstream token refresh exception: {e}. Re-authenticating...")
+            logger.error(f"Upstream token refresh exception: {e}. Re-authenticating via login...", exc_info=True)
             return await self.login()
 
     async def get_valid_token(self) -> str:
@@ -74,7 +78,7 @@ class UpstreamClient:
         if not self.access_token or time.time() > self.expires_at - 5:
             success = await self.refresh_upstream_token()
             if not success:
-                raise Exception("Unable to get valid token from upstream server")
+                raise UpstreamAuthError("Unable to get valid token from upstream server")
         return self.access_token
 
     async def request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
@@ -106,16 +110,24 @@ class UpstreamClient:
         Uses in-memory cache to prevent redundant HTTP requests for concurrent operations.
         """
         now = time.time()
+        token_len = len(token) if token else 0
+        token_prefix = token[:15] + "..." if token_len > 15 else token
+        
+        logger.info(f"Validating client token: len={token_len}, prefix={token_prefix!r}")
         
         # Check cache
         if token in self.token_validation_cache:
             user_info, cache_expiry = self.token_validation_cache[token]
             if now < cache_expiry:
+                remaining_cache = int(cache_expiry - now)
+                logger.info(f"Token validation cache HIT. Valid for another {remaining_cache} seconds.")
                 return user_info
             else:
+                logger.info("Token validation cache found but EXPIRED. Evicting from cache...")
                 del self.token_validation_cache[token]
 
         # Call upstream server to validate
+        logger.info("Token validation cache MISS. Sending request to upstream /api/auth/me...")
         try:
             res = await self.client.get(
                 "/api/auth/me",
@@ -125,12 +137,12 @@ class UpstreamClient:
                 user_info = res.json()
                 # Cache the validation for 15 seconds
                 self.token_validation_cache[token] = (user_info, now + 15)
+                logger.info(f"Client token validation succeeded on upstream. Caching validation for 15s. User: {user_info.get('username')}")
                 return user_info
             else:
-                logger.warning(f"Client token validation failed on upstream with status {res.status_code}")
+                logger.warning(f"Client token validation failed on upstream with status {res.status_code}. Response: {res.text}")
                 return None
         except Exception as e:
-            logger.error(f"Client token validation exception: {e}")
-            return None
+            raise UpstreamConnectionError(f"Client token validation network failure: {e}") from e
 
 upstream_client = UpstreamClient()

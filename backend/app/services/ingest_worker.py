@@ -52,6 +52,11 @@ async def poll_upstream():
             logger.error(f"Ingest Worker: Upstream image response missing key data. Keys: {list(img_data.keys())}")
             return
             
+        # Validate that the image data can be decoded
+        if not cv_processor_service.is_valid_image(raw_base64):
+            logger.warning(f"Ingest Worker: Discarding image '{image_id}' because it is corrupted/damaged.")
+            return
+
         logger.info(f"Ingest Worker: Retrieved image '{image_id}' from upstream. Checking deduplication...")
         
         # 2. Check if deduplication criteria is met

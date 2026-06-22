@@ -123,6 +123,18 @@ class CVProcessorService:
         _, buffer = cv2.imencode('.png', thumbnail)
         return base64.b64encode(buffer).decode('utf-8')
 
+    def is_valid_image(self, raw_image_base64: str) -> bool:
+        """
+        Validates if a raw base64 string can be successfully decoded by OpenCV.
+        """
+        try:
+            img_bytes = base64.b64decode(raw_image_base64)
+            np_arr = np.frombuffer(img_bytes, np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            return img is not None
+        except Exception:
+            return False
+
 # Singleton processor context service
 cv_processor_service = CVProcessorService()
 

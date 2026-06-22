@@ -4,64 +4,96 @@ This project implements a full-stack Live Microscopy Dashboard. The system behav
 
 ---
 
-## 1. Architectural Choices & Design Patterns
+## 1. Project Directory Structure
 
-### Smart Caching Proxy
-To protect the hosted upstream server, only a single backend background ingestion task polls the upstream server. The Angular client queries the local FastAPI database cache, avoiding redundant traffic and upstream throttling.
-
-### Decoupled Processing (Swappable Queue Manager)
-CPU-intensive OpenCV processing tasks are completely decoupled from upstream fetching:
-1. The **Ingestion Worker** polls upstream, inserts raw metadata into the database immediately, inserts a pending job entry, and enqueues the job.
-2. An abstract **QueueManager** exposes simple `push_job` and `get_job` interfaces.
-3. A background **Processing Consumer** pulls from the queue, runs processing strategies, saves transparent mask PNG overlays, and marks jobs as completed.
-4. **RabbitMQ/Celery Compatibility**: The queue manager uses a clean interface design. If scaling to a production broker like RabbitMQ or Celery is required, only the `QueueManager` implementation in `queue_manager.py` needs to be replaced.
-
-### Strategy Design Pattern for Computer Vision (CV)
-Overlays are generated dynamically using the **Strategy Design Pattern**:
-- **`CVOverlayStrategy`**: Abstract base class defining the execution interface.
-- **`CannyOverlayStrategy`**: Concrete strategy generating neon green transparent PNG edge boundary masks.
-- **`OtsuOverlayStrategy`**: Concrete strategy generating semi-transparent neon orange cell body masks.
-- **`CVProcessorService`**: Manages the strategies registry. Adding new computer vision filters in the future only requires adding a strategy class and registering it in this service.
-
-### Controller-Service Layer Decoupling (SOLID Principles)
-To avoid logic bleed in controller routers, FastAPI routes in `routers/image.py` are thin wrappers. All queries, timeframe window offsets calculations, database transactions, and data mappings are encapsulated in a dedicated **`ImageService`** layer.
-
-### Relational SQLite Schema
-The local database uses a clean, normalized relational design containing three tables:
-- **`images`**: Core ingested frame metadata, raw high-res base64, and pre-computed `120x90` thumbnails for timeline previews.
-- **`processing_jobs`**: Job state tracking (`pending`, `processing`, `completed`, `failed`) and processing failure logs.
-- **`processing_results`**: Base64 transparent PNG overlay masks for different CV algorithms.
-
-### Transparent Stackable Overlays
-Overlays are generated as transparent PNG masks rather than pre-drawn on top of the original image:
-- **Canny Edge Detection**: Neon green boundaries over transparent background.
-- **Otsu Thresholding**: Semi-transparent neon orange cell fills over transparent background.
-This enables the client to overlay them using absolute CSS layout positioning and stack multiple layers simultaneously.
-
-### Chronological History Scrubbing Bar
-The bottom drawer features a chronological scrubbing timeline bar similar to modern video players:
-- Renders absolute tick marks representing frame ingestion times.
-- Moving the cursor displays a floating tooltip containing the frame preview thumbnail, classification label, metrics, and timestamp.
-- Clicking or releasing locks the snapshot and updates the main feed.
-
-### Modular Client Components
-To ensure single-responsibility clean code, the main `DashboardComponent` page has been split into five standalone, modular components:
-1. `DashboardComponent` (Orchestrates signals, state, and HTTP polling/fetching).
-2. `ViewportComponent` (Displays the raw image, stackable overlays, toggle controls, and loader states).
-3. `TimelineScrubBarComponent` (Handles mouse tracking, hover coordinates mapping, and floating tooltip).
-4. `HistogramComponent` (Draws pixel intensity columns on a native HTML5 canvas).
-5. `MetricsComponent` (Displays KPI stats cards and classification status badges).
+```
+ImageCyte/ (Project Root)
+├── README.md             → This root architecture & setup documentation
+├── docker-compose.yml    → Orchestrates frontend, backend, and dozzle services
+├── spec.md               → Diagnostic specification & goals
+├── data/                 → Bind-mounted directory containing the SQLite database file
+│   └── microscopy.db     → SQLite database file (visible on the host)
+│
+├── backend/              → FastAPI proxy backend & CV processing engine
+│   ├── app/              → Backend source code
+│   ├── tests/            → Pytest test suite
+│   └── README.md         → [Detailed Backend Documentation](backend/README.md)
+│
+└── frontend/             → Angular single-page application client
+    ├── src/              → Frontend source code
+    └── README.md         → [Detailed Frontend Documentation](frontend/README.md)
+```
 
 ---
 
-## 2. Setup & Execution
+## 2. System Architecture
+
+```
+┌────────────────────────────────────────────────────────┐
+│                    UPSTREAM SERVER                     │
+│    (Holds live frame base64 images & analysis JSON)    │
+└──────────────────────────┬─────────────────────────────┘
+                           ▲
+                           │ Ingestion loop (POLLING_INTERVAL = 5s)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│                    IMAGE CYTE BACKEND                  │
+│                                                        │
+│ ┌──────────────────┐   Job   ┌───────────────────────┐ │
+│ │ Ingest Worker    ├────────►│ Async Queue Manager   │ │
+│ │ (polls upstream) │         │ (asyncio.Queue FIFO)  │ │
+│ └────────┬─────────┘         └──────────┬────────────┘ │
+│          │                              │              │
+│          │ writes metadata              │ dequeues job │
+│          ▼                              ▼              │
+│ ┌──────────────────┐         ┌───────────────────────┐ │
+│ │   SQLite Cache   │         │ Processing Consumer   │ │
+│ │ (microscopy.db)  │◄────────┤ (OpenCV Edge/Cell)    │ │
+│ └────────▲─────────┘  saves  └───────────────────────┘ │
+│          │           overlays                          │
+└──────────┼─────────────────────────────────────────────┘
+           │
+           │ queries endpoints (auth guard)
+           ▼
+┌────────────────────────────────────────────────────────┐
+│                   IMAGE CYTE FRONTEND                  │
+│         (Angular Client Dashboard at port 4200)        │
+└────────────────────────────────────────────────────────┘
+```
+
+The system is decoupled into two key pipelines:
+1. **The Ingestion Pipeline**: The `Ingest Worker` polls the upstream server, deduplicates frames, generates a quick `120x90` thumbnail, commits the base metadata to the relational SQLite database cache, and pushes the image ID to the FIFO queue.
+2. **The Processing Pipeline**: The background `Processing Consumer` pulls jobs from the queue, runs Dilated Canny Edge Detection and Otsu Cell Segmentation strategies, and saves the resulting transparent PNG masks to the database.
+
+Clients view metadata and stackable overlays directly from the local cache database, preventing redundant calls to the upstream server.
+
+---
+
+## 3. Tech Stack & Tools Overview
+
+### Backend API
+- **FastAPI**: Lightweight web server featuring ASGI routing and life cycle hooks.
+- **SQLAlchemy ORM**: Handles relational SQLite mappings.
+- **OpenCV & NumPy**: Decodes base64 frames, resizes thumbnails, and generates computer vision transparent PNG overlays.
+
+### Frontend Dashboard
+- **Angular standalone components**: Modular viewport, timeline player, canvas histogram, metrics, and KPI card components.
+- **RxJS**: BehaviorSubjects manage active token states, coordinate history scrub positions, and throttle HTTP polling.
+
+### Management Tools
+- **Dozzle (Log Viewer)**: Integrates in docker-compose. It reads the Docker socket to provide real-time, searchable container logs via a web GUI.
+- **SQLite Database Bind-Mount**: Database files are stored under `./data/microscopy.db` on the host, allowing database inspection using local tools.
+
+---
+
+## 4. Setup & Running the Project
 
 ### Prerequisites
-- Docker and Docker Compose installed.
+- Docker and Docker Compose installed and running on the host.
 
 ### Quick Start
-1. Clone the repository and navigate to the directory.
-2. Build and launch the stack:
+1. Navigate to the project root directory.
+2. Build and launch the container services:
    ```bash
    docker-compose up --build
    ```
@@ -71,18 +103,22 @@ To ensure single-responsibility clean code, the main `DashboardComponent` page h
    - **Username**: `tomer.adar`
    - **Password**: `chip2255`
 
+### Log Viewer (Dozzle)
+You can view rich backend logs, line numbers, database queries, and frontend console output in real-time by opening:
+`http://localhost:8888`
+
 ---
 
-## 3. Running Verification Tests
+## 5. Verification & Tests
 
-### Running Backend Pytest Suite
-Run the test suite inside the backend container to verify database CRUD operations, QueueManager pushing/popping, and transparent PNG processors:
+### Backend Tests
+Execute unit tests for database records, QueueManager queues, transparent CV strategies, decorator failures, and trace suppression inside the backend container:
 ```bash
-docker exec imagecyte-backend-1 env PYTHONPATH=. pytest tests
+docker-compose exec backend env PYTHONPATH=. pytest
 ```
 
-### Running Frontend Vitest Suite
-Execute unit tests for the core Angular services and the dashboard orchestrator inside the frontend container:
+### Frontend Tests
+Execute standalone unit tests for components, services, auth interceptor refresh queues, and viewport canvas rendering:
 ```bash
-docker exec imagecyte-frontend-1 npx ng test --no-watch
+docker-compose exec frontend npx ng test --no-watch
 ```
